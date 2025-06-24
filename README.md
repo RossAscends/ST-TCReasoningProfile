@@ -65,6 +65,7 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
   - Clear any extra content outside the `<reasoning>` section
   - Add the header prefix to help assure the model will continue successfully
   - Finally, initiate a Continue to get the Response portion
+- **Only Trigger when User is Last in Chat** checkbox - self explanatory. It will make the extension do nothing unless a User message is the last one in chat when a generation is called. This is useful to have on in certain situations such as QR integrations or sending `/sys` messages.
 
 ### Profile Setup
 
