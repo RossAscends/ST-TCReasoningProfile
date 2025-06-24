@@ -35,7 +35,6 @@ function initExtSettings() {
     extension_settings.customReasoning.onlyTriggerWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast || false;
     extension_settings.customReasoning.isExtensionActive = extension_settings.customReasoning.isExtensionActive || false;
     extension_settings.customReasoning.postReasoningPrefix = extension_settings.customReasoning.postReasoningPrefix || '\n ';
-
 }
 
 function getExtSettings() {
@@ -70,6 +69,7 @@ async function updateExtensionSettings() {
     await saveSettingsDebounced();
 }
 
+//MARK:SwapToReasoning
 async function swapToReasoningProfile() {
 
     if (extension_settings.customReasoning.reasoningProfile == 'None') {
@@ -79,10 +79,10 @@ async function swapToReasoningProfile() {
     }
 
     activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
-    console.debug(`${LOG_PREFIX} Saving active main profile as "${activeConnectionProfileName}" for later reversion.`);
+    console.warn(`${LOG_PREFIX} Saving active main profile as "${activeConnectionProfileName}" for later reversion.`);
     isProfileSwapping = true;
     isReasoningProfileSwappedOn = true;
-    console.debug(`${LOG_PREFIX} Swapping to reasoning profile ${extension_settings.customReasoning.reasoningProfileName}`);
+    console.warn(`${LOG_PREFIX} Swapping to reasoning profile ${extension_settings.customReasoning.reasoningProfileName}`);
     try {
 
         const targetNode = document.querySelector('.online_status_indicator');
@@ -91,7 +91,7 @@ async function swapToReasoningProfile() {
         const callback = function (mutationsList, observer) {
             for (let mutation of mutationsList) {
                 if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
-                    console.log('Class "success" added to #online_status_indicator');
+                    console.warn('Class "success" added to #online_status_indicator');
                     apiIsOnline = true
                 }
             }
@@ -110,7 +110,7 @@ async function swapToReasoningProfile() {
         );
 
         await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
-            console.debug(`${LOG_PREFIX} Reasoning profile swap complete and API online`);
+            console.warn(`${LOG_PREFIX} Reasoning profile swap complete and API online`);
             resolve();
             observer.disconnect();
             isProfileSwapping = false;
@@ -121,8 +121,9 @@ async function swapToReasoningProfile() {
     }
 }
 
+//MARK:SwapBack
 async function swapToOriginalProfile() {
-    console.debug(`${LOG_PREFIX} Swapping back to original profile: "${activeConnectionProfileName}"`);
+    console.warn(`${LOG_PREFIX} Swapping back to original profile: "${activeConnectionProfileName}"`);
     isProfileSwapping = true;
     try {
 
@@ -132,7 +133,7 @@ async function swapToOriginalProfile() {
         const callback = function (mutationsList, observer) {
             for (let mutation of mutationsList) {
                 if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
-                    console.log('Class "success" added to #online_status_indicator');
+                    console.warn('Class "success" added to #online_status_indicator');
                     apiIsOnline = true
                 }
             }
@@ -151,7 +152,7 @@ async function swapToOriginalProfile() {
         );
 
         await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
-            console.debug(`${LOG_PREFIX} Original profile swap complete and API online`);
+            console.warn(`${LOG_PREFIX} Original profile swap complete and API online`);
             resolve();
             observer.disconnect();
             isReasoningProfileSwappedOn = false;
@@ -163,20 +164,9 @@ async function swapToOriginalProfile() {
     }
 }
 
-function shouldSkipIfNotUserLast() {
-    let onlyTriggerWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
-    let chat = getContext().chat;
-    let lastMes = chat[chat.length - 1];
-    console.debug(`${LOG_PREFIX} lastMes: ${JSON.stringify(lastMes.mes)}`);
-    let lastMesIsUser = lastMes.is_user
-    let shouldSkip = !lastMesIsUser && onlyTriggerWhenUserLast;
-    console.debug(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}, onlyTriggerWhenUserLast: ${onlyTriggerWhenUserLast}, shouldSkip: ${shouldSkip}`);
-    return shouldSkip
-}
-
 function checkIfLastMesIsByUser() {
     let lastMesIsUser
-    let { chat } = getContext();
+    let { chat } = SillyTavern.getContext();
     let lastMes = chat[chat.length - 1];
     console.warn(`${LOG_PREFIX} lastMes: ${JSON.stringify(lastMes.mes)}`);
     lastMesIsUser = lastMes.is_user
@@ -193,6 +183,63 @@ function setAppropriateTriggerType() {
         triggerType = 'GENERATION_STARTED';
     }
     console.warn(`${LOG_PREFIX} Trigger type set to ${triggerType}`);
+}
+
+//MARK:OnMessageStart
+function setupStartListener() {
+    console.warn(`${LOG_PREFIX} Setting up start listener for type ${triggerType}`);
+
+    eventSource.removeListener(event_types.GENERATION_STARTED);
+    eventSource.removeListener(event_types.USER_MESSAGE_RENDERED);
+
+    eventSource.on(event_types[triggerType], async () => {
+        console.warn(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+
+        if (!isExtensionActive) return;
+        if (isAppLoading) return;
+
+        let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
+
+        let isLastMesByUser = null
+
+        isLastMesByUser = checkIfLastMesIsByUser();
+
+        console.warn(`${LOG_PREFIX} triggerOnlyWhenUserLast: ${triggerOnlyWhenUserLast}, isLastMesByUser: ${isLastMesByUser}`);
+        if (!isAutoContinuing && triggerOnlyWhenUserLast && isLastMesByUser === false) {
+            console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
+            return
+        }
+
+        isMidGenerationCycle = true;
+
+        if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
+            console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
+            await swapToReasoningProfile();
+            eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
+                console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
+                stopGeneration();
+            });
+        }
+        if (isExtensionActive && isAutoContinuing) {
+            console.warn(LOG_PREFIX, 'AUTOCONTINUING');
+
+            /*
+            // uncomment to see exactly what was sent
+            eventSource.once(event_types.GENERATE_AFTER_DATA, async (generate_data) => {
+                console.warn(generate_data.prompt);
+            });
+            */
+
+            let chat = getContext().chat;
+            let lastMes = chat[chat.length - 1];
+
+            console.warn(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
+            lastMes.mes = extension_settings.customReasoning.postReasoningPrefix;
+            chat[chat.length - 1] = lastMes;
+            await saveChat();
+            await delay(200);
+        }
+    });
 }
 
 function toggleExtensionState(state) {
@@ -250,6 +297,7 @@ function toggleExtensionState(state) {
         setAppropriateTriggerType();
         isAppLoading = false;
         console.warn(`${LOG_PREFIX} Extension setup complete.`);
+        setupStartListener();
     });
 
     $activeToggle.off('click').on('click', (e) => {
@@ -267,6 +315,7 @@ function toggleExtensionState(state) {
     $onlyTriggerWhenUserLast.off('click').on('click', (e) => {
         extension_settings.customReasoning.onlyTriggerWhenUserLast = !extension_settings.customReasoning.onlyTriggerWhenUserLast;
         setAppropriateTriggerType();
+        setupStartListener();
         saveSettingsDebounced();
     })
 
@@ -275,59 +324,6 @@ function toggleExtensionState(state) {
         saveSettingsDebounced();
     });
 
-    //MARK:OnMessageStart
-    eventSource.on(event_types[triggerType], async () => {
-        console.warn(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
-
-        if (!isExtensionActive) return;
-        if (isAppLoading) return;
-
-        let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
-
-        let isLastMesByUser = null
-
-        isLastMesByUser = checkIfLastMesIsByUser();
-
-        /*         await waitUntilCondition(() => isLastMesByUser !== null).then(() => {
-                    console.warn(`${LOG_PREFIX} Got isLastMesByUser: ${isLastMesByUser}`);
-                }); */
-
-        console.warn(`${LOG_PREFIX} triggerOnlyWhenUserLast: ${triggerOnlyWhenUserLast}, isLastMesByUser: ${isLastMesByUser}`);
-        if (triggerOnlyWhenUserLast && isLastMesByUser === false) {
-            console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
-            return
-        }
-
-        isMidGenerationCycle = true;
-
-        if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
-            console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
-            await swapToReasoningProfile();
-            eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
-                console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
-                stopGeneration();
-            });
-        }
-        if (isExtensionActive && isAutoContinuing) {
-            console.warn(LOG_PREFIX, 'AUTOCONTINUING');
-
-            /*
-            // uncomment to see exactly what was sent
-            eventSource.once(event_types.GENERATE_AFTER_DATA, async (generate_data) => {
-                console.warn(generate_data.prompt);
-            });
-            */
-
-            let chat = getContext().chat;
-            let lastMes = chat[chat.length - 1];
-
-            console.warn(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
-            lastMes.mes = extension_settings.customReasoning.postReasoningPrefix;
-            chat[chat.length - 1] = lastMes;
-            await saveChat();
-            await delay(200);
-        }
-    });
 
     //MARK: onMessageEnd
     eventSource.on(event_types.GENERATION_ENDED, async () => {
