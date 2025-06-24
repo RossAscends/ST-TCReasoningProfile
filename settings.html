@@ -1,0 +1,43 @@
+<div class="tabby_loader_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>TC Reasoning Profile</b>
+            <div class="flex-container checkbox">
+                <i id="customReasoningPowerButton" class="fa-solid fa-power-off togglable menu_button margin0"></i>
+            </div>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+
+        <div class="inline-drawer-content">
+
+            <small class="flex-container">
+                <span class="flex-container alignitemscenter">
+                    <span class="alignitemscenter">
+                        This extension only works if Reasoning is Auto-Parsed and both Reasoning Prefix and Suffix are set in
+                        <button class="menu_button menu_button_icon drawer-opener" data-target="advanced-formatting-button" tabindex="0">
+                            <i class="fa-solid fa-font"></i>
+                            <span data-i18n="Advanced Formatting">Advanced Formatting</span>
+                        </button>
+                    </span>
+                    Full setup details and samples can be found on the <a href="https://github.com/Artificer-Games/TC-Reasoning-Profile" target="_blank">GitHub Repo</a>.
+                </span>
+            </small>
+
+            <hr>
+            <div class="flex-container alignitemscenter">
+                <small>Reasoning Profile: </small>
+                <select id="reasoningProfileSelector" class="text_pole flex1 wide100p" placeholder="Select profile for Reasoning" value="" title="This Profile will be used for Reasoning Step."></select>
+            </div>
+            <div class="flex-container checkbox">
+                <input type="checkbox" id="autoContinueAfterReasoning" class="checkbox" value="true" data-i18n="Auto Continue After Reasoning" title="Continues the Response after the Reasoning step. You should probabaly always leave this on.">
+                Continue with Response After Reasoning
+            </div>
+            <div class="flex-container alignitemscenter">
+                <small>Auto-Continue Response Prefix: (default: newline space) </small>
+                <textarea id="postReasoningPrefix" class="text_pole textarea_compact autoSetHeight" title="This will be added at the head of the continued Response once the Reasoning step is finished. Any content that exists in the 'mes' attribute of the message will be cleared."></textarea>
+            </div>
+
+        </div>
+    </div>
+</div>
+</div>
