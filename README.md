@@ -33,7 +33,7 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
 - Each step functions under its own bespoke Connection Profile.
 - `Reasoning Step` has low temp, a response length of your liking, and should not produce any response after the Reasoning is finished.
   - **EXCEPTION**: Asking the model produce a minimal 'finished signal' (ex: `CoT Done`) outside the Reasoning tags can be a useful failsafe. This is explained more below.
-- `Response Step` is higher temp, clears any 'Response' content leftover from the Reasoning step, and uses the Reasoning content to inform itself.
+- `Response Step` is higher temp, clears any leftover non-Reasoning content, and uses the Reasoning to inform itself.
 - When a generation request is sent the extension swaps to the Reasoning profile first, gets the Reasoning, and then swaps back to the Response profile to complete the request.
 
 ### Limitations
