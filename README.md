@@ -15,14 +15,14 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
 ### Advantages over Stepping Thinking
 
 - Reasoning and Response are contained within the same message and follow ST's native message saving conventions.
-- Following from above, all native functions for Reasoning manipulation are also possible.
+- Following from above, all native functions for Reasoning manipulation are possible.
 - No new UI to learn for prompt adjustments; just setup Connection Profiles as you normally would.
 - Can use different APIs for each step, leveraging their individual strengths.
 
 ### Assumptions
 
 - Not all models are trained to Reason, but they *do* all have an innate 'Assistant Lizard Brain' we can leverage to simulate reasoning.
-- Models that *are* trained to Reasoning tend to spend a lot of time & tokens in their Reasoning process, and we want to avoid this.
+- Models that *are* trained to Reasoning tend to spend a lot of time & tokens in their Reasoning process, and we want to control this.
 - Models follow complex instructions much more precisely when Temperature is low (0.5 to 0.8).
 - Models write more interesting and novel roleplay content when Temperature is high (1.0 to 1.5 or even more, when mitigated with minP 0.01 to 0.03).
 - The primary use case is local inference with a 12 to 24B model on a Text Completion API like Tabby, YALS, or KCPP.
