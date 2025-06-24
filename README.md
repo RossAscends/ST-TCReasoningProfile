@@ -70,7 +70,9 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
 
 #### Reasoning Connection Profile
 
-This should be designed to get the model to do a chain of thought inside tags that match your Reasoning prefix/suffix settings in ST's Advanced Formatting panel. I have found that models tend to dislike doing this cleanly, so it may be helpful to prompt it to include a single word after the reasoning tag has closed to signify it has are finished. Without such a 'final word outside of the think tag', the model will often forget to close the think tag.
+- This Profile should be designed to make the model perform a Chain of Thought inside `<tags>` that match your Reasoning prefix/suffix settings in ST's Advanced Formatting panel. 
+- I have found that non-Reasoning models often fail close the `<reasoning>` tag correctly when prompted to "end immediately after reasoning is finished".
+- So it can be helpful to instead prompt the model include a single word after the reasoning tag has closed to signify it has finished.
 
 **Sample Reasoning Profile Settings:**
 
