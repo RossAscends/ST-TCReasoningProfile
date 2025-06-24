@@ -1,13 +1,12 @@
 {
-    "display_name": "CustomReasoning",
+    "display_name": "Text Completion Reasoning Profile",
     "loading_order": 100,
     "requires": [],
     "optional": [],
     "js": "index.js",
-    "css": "style.css",
     "author": "RossAscends",
     "version": "1.0.0",
-    "homePage": "https://github.com/RossAscends/Extension-CustomReasoning",
+    "homePage": "https://github.com/RossAscends/ST-TCReasoningProfile",
     "auto_update": true,
     "i18n": {}
 }
