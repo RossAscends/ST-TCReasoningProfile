@@ -57,15 +57,14 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
 
 ### Extension Settings
 
-**Power button** - located in the Extension Settings header, this simply toggles the active state of the entire extension.
-**Reasoning Profile** - this is the profile that will be used in the Reasoning Step.
-**Post-Reasoning auto-Continued Response Prefix** textarea - The message about to be continued upon will be prefixed with this. By default the extension will add `\n ` (newline and a space), but you can set this to anything you like. This prefix helps assure the model will attempt to Continue correctly and not simply assume the response is complete and thus return `<EOS>` or something similar.
-**Continue After Reasoning Finishes** checkbox - makes the extension do the following after Reasoning Step is complete:
-
-- Swap back to the primary Response Profile
-- Clear any extra content outside the `<reasoning>` section
-- Add the header prefix to help assure the model will continue successfully
-- Finally, initiate a Continue to get the Response portion
+- **Power button** - located in the Extension Settings header, this simply toggles the active state of the entire extension.
+- **Reasoning Profile** - this is the profile that will be used in the Reasoning Step.
+- **Post-Reasoning auto-Continued Response Prefix** textarea - The message about to be continued upon will be prefixed with this. By default the extension will add `\n ` (newline and a space), but you can set this to anything you like. This prefix helps assure the model will attempt to Continue correctly and not simply assume the response is complete and thus return `<EOS>` or something similar.
+- **Continue After Reasoning Finishes** checkbox - makes the extension do the following after Reasoning Step:
+  - Swap back to the primary Response Profile
+  - Clear any extra content outside the `<reasoning>` section
+  - Add the header prefix to help assure the model will continue successfully
+  - Finally, initiate a Continue to get the Response portion
 
 ### Profile Setup
 
