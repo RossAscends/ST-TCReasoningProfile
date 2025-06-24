@@ -131,7 +131,7 @@ Response Length 1000 tokens
 
 **Sample Response Profile System Prompt:**
 
-This can be anything, but I find it helps to adjust the system prompt to ask the model to `continue with a response based on the Reasoning contents` or something of that sort.
+This can be anything, but I find it helps to use the System Prompt to point the model at the Reasoning tag as a reference.
 
 ```plaintext
 Continue in-character as {{char}} to provide a final response.
