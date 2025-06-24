@@ -17,6 +17,7 @@ const $connectionProfilesSelect = $('#connection_profiles');
 let activeConnectionProfileName = null;
 let isReasoningProfileSwappedOn = false;
 let isExtensionActive = false;
+let isAppLoading = true;
 
 let isMidGenerationCycle = false;
 let isAutoContinuing = false;
@@ -174,18 +175,20 @@ function shouldSkipIfNotUserLast() {
 }
 
 function checkIfLastMesIsByUser() {
-    let chat = getContext().chat;
+    let lastMesIsUser
+    let { chat } = getContext();
     let lastMes = chat[chat.length - 1];
     console.warn(`${LOG_PREFIX} lastMes: ${JSON.stringify(lastMes.mes)}`);
-    let lastMesIsUser = lastMes.is_user
+    lastMesIsUser = lastMes.is_user
     console.warn(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}`);
+
     return lastMesIsUser
 }
 
 function setAppropriateTriggerType() {
     let onlyTriggerOnUserMessage = extension_settings.customReasoning.onlyTriggerWhenUserLast;
     if (onlyTriggerOnUserMessage) {
-        triggerType = 'MESSAGE_SENT';
+        triggerType = 'USER_MESSAGE_RENDERED';
     } else {
         triggerType = 'GENERATION_STARTED';
     }
@@ -232,7 +235,7 @@ function toggleExtensionState(state) {
         settings = getExtSettings();
     }
 
-    console.info(`${LOG_PREFIX} Extension settings ready: ${JSON.stringify(settings)}`);
+    console.warn(`${LOG_PREFIX} Extension settings ready: ${JSON.stringify(settings)}`);
 
     eventSource.once(event_types.APP_READY, () => {
         addConnectionProfilesToExtension();
@@ -245,6 +248,8 @@ function toggleExtensionState(state) {
         console.debug(`${LOG_PREFIX} onLoad active connection profile is: ${activeConnectionProfileName}`);
         toggleExtensionState(isExtensionActive);
         setAppropriateTriggerType();
+        isAppLoading = false;
+        console.warn(`${LOG_PREFIX} Extension setup complete.`);
     });
 
     $activeToggle.off('click').on('click', (e) => {
@@ -270,15 +275,25 @@ function toggleExtensionState(state) {
         saveSettingsDebounced();
     });
 
+    //MARK:OnMessageStart
     eventSource.on(event_types[triggerType], async () => {
-        console.debug(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+        console.warn(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
 
         if (!isExtensionActive) return;
+        if (isAppLoading) return;
 
         let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
-        let isLastMesByUser = checkIfLastMesIsByUser();
 
-        if (triggerOnlyWhenUserLast && !isLastMesByUser) {
+        let isLastMesByUser = null
+
+        isLastMesByUser = checkIfLastMesIsByUser();
+
+        /*         await waitUntilCondition(() => isLastMesByUser !== null).then(() => {
+                    console.warn(`${LOG_PREFIX} Got isLastMesByUser: ${isLastMesByUser}`);
+                }); */
+
+        console.warn(`${LOG_PREFIX} triggerOnlyWhenUserLast: ${triggerOnlyWhenUserLast}, isLastMesByUser: ${isLastMesByUser}`);
+        if (triggerOnlyWhenUserLast && isLastMesByUser === false) {
             console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
             return
         }
@@ -286,15 +301,15 @@ function toggleExtensionState(state) {
         isMidGenerationCycle = true;
 
         if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
-            console.debug(LOG_PREFIX, 'Swapping to reasoning Profile');
+            console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
             await swapToReasoningProfile();
             eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
-                console.debug(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
+                console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
                 stopGeneration();
             });
         }
         if (isExtensionActive && isAutoContinuing) {
-            console.debug(LOG_PREFIX, 'AUTOCONTINUING');
+            console.warn(LOG_PREFIX, 'AUTOCONTINUING');
 
             /*
             // uncomment to see exactly what was sent
@@ -306,7 +321,7 @@ function toggleExtensionState(state) {
             let chat = getContext().chat;
             let lastMes = chat[chat.length - 1];
 
-            console.debug(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
+            console.warn(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
             lastMes.mes = extension_settings.customReasoning.postReasoningPrefix;
             chat[chat.length - 1] = lastMes;
             await saveChat();
@@ -314,37 +329,39 @@ function toggleExtensionState(state) {
         }
     });
 
+    //MARK: onMessageEnd
     eventSource.on(event_types.GENERATION_ENDED, async () => {
         if (!isExtensionActive) return;
+        if (isAppLoading) return;
 
-        console.debug(LOG_PREFIX, 'Generation ended');
+        console.warn(LOG_PREFIX, 'Generation ended');
         await delay(200);
-        console.debug(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+        console.warn(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
         if (isReasoningProfileSwappedOn && isExtensionActive && !isProfileSwapping) {
-            console.debug(LOG_PREFIX, 'G_ENDED; reverting');
+            console.warn(LOG_PREFIX, 'G_ENDED; reverting');
             await swapToOriginalProfile();
         }
         if (!extension_settings.customReasoning.autoContinueAfterReasoning && isMidGenerationCycle) {
             isMidGenerationCycle = false;
         }
         if (isAutoContinuing && isMidGenerationCycle) {
-            console.debug(LOG_PREFIX, 'clearing auto-continue and midcycle tags since we should be done.');
+            console.warn(LOG_PREFIX, 'clearing auto-continue and midcycle tags since we should be done.');
             isAutoContinuing = false;
             isMidGenerationCycle = false;
         }
         if (extension_settings.customReasoning.autoContinueAfterReasoning && isMidGenerationCycle && !isAutoContinuing) {
-            console.debug(LOG_PREFIX, 'triggering auto-continue since we are still midcycle and havent done the continued response part yet');
+            console.warn(LOG_PREFIX, 'triggering auto-continue since we are still midcycle and havent done the continued response part yet');
             isAutoContinuing = true;
             $('#option_continue').trigger('click'); //old school smoothbrained method still used in script.js!
         }
-        console.debug(`${LOG_PREFIX} AFTER GEND: MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+        console.warn(`${LOG_PREFIX} AFTER GEND: MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
 
     });
 
     eventSource.on(event_types.CONNECTION_PROFILE_LOADED, () => {
         if (!isExtensionActive) return;
         if (isReasoningProfileSwappedOn || isMidGenerationCycle || isAutoContinuing) { return; } //so we don't trigger on our own change
-        console.debug(`${LOG_PREFIX} Main connection profile changed to ${activeConnectionProfileName}`);
+        console.warn(`${LOG_PREFIX} Main connection profile changed to ${activeConnectionProfileName}`);
         activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
     });
 })();
