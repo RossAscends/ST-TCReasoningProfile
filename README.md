@@ -134,8 +134,8 @@ Response Length 1000 tokens
 This can be anything, but I find it helps to adjust the system prompt to ask the model to `continue with a response based on the Reasoning contents` or something of that sort.
 
 ```plaintext
-Continue in-character as {{char}} to provide a final response that is informed by and integrates the concepts detailed inside the <think> tag. 
-Do not directly mention or quote verbatim the contents inside the <think> tag.
+Continue in-character as {{char}} to provide a final response.
+Your response should integrate (but NOT directly mention or quote) the information detailed inside the <think> tag.
 ```
 
 ## License
