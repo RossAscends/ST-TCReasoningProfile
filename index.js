@@ -6,11 +6,7 @@ const {
 import { saveSettingsDebounced, saveChat, stopGeneration } from '../../../../script.js';
 import { delay } from '../../../utils.js';
 import { extension_settings, getContext } from '../../../extensions.js';
-
-
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
-//import { SlashCommandAbortController } from '../../slash-commands/SlashCommandAbortController.js';
-//import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../slash-commands/SlashCommandArgument.js';
 
 const LOG_PREFIX = '[ST-TCReasoningProfile]';
 const EXTENSION_PATH = 'scripts/extensions/third-party/ST-TCReasoningProfile';
@@ -32,8 +28,10 @@ function initExtSettings() {
     extension_settings.customReasoning.reasoningProfileID = extension_settings.customReasoning.reasoningProfileID || 'None';
     extension_settings.customReasoning.reasoningProfileName = extension_settings.customReasoning.reasoningProfileName || 'None';
     extension_settings.customReasoning.autoContinueAfterReasoning = extension_settings.customReasoning.autoContinueAfterReasoning || false;
+    extension_settings.customReasoning.onlyTriggerWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast || false;
     extension_settings.customReasoning.isExtensionActive = extension_settings.customReasoning.isExtensionActive || false;
     extension_settings.customReasoning.postReasoningPrefix = extension_settings.customReasoning.postReasoningPrefix || '\n ';
+
 }
 
 function getExtSettings() {
@@ -122,6 +120,16 @@ async function swapToOriginalProfile() {
     }
 }
 
+function shouldSkipIfNotUserLast() {
+    let onlyTriggerWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
+    let chat = getContext().chat;
+    let lastMes = chat[chat.length - 1];
+    let lastMesIsUser = lastMes.is_user
+    let shouldSkip = !lastMesIsUser && onlyTriggerWhenUserLast;
+    console.warn(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}, onlyTriggerWhenUserLast: ${onlyTriggerWhenUserLast}, shouldSkip: ${shouldSkip}`);
+    return shouldSkip
+}
+
 function toggleExtensionState(state) {
     const $activeToggle = $('#customReasoningPowerButton');
     //console.warn(`Toggling extension active state to ${state}`);
@@ -140,6 +148,7 @@ function toggleExtensionState(state) {
     const $activeToggle = $('#customReasoningPowerButton');
     const $autoContinue = $('#autoContinueAfterReasoning'); //checkbox
     const $postReasoningPrefix = $('#postReasoningPrefix');
+    const $onlyTriggerWhenUserLast = $("#onlyTriggerWhenUserLast");
 
     settings = getExtSettings();
     let isAnySettingNull = false;
@@ -167,6 +176,7 @@ function toggleExtensionState(state) {
         addConnectionProfilesToExtension();
         $extensionSelector.val(settings.reasoningProfileID).trigger('change');
         $autoContinue.prop('checked', settings.autoContinueAfterReasoning);
+        $onlyTriggerWhenUserLast.prop('checked', settings.onlyTriggerWhenUserLast);
         $postReasoningPrefix.val(settings.postReasoningPrefix);
         isExtensionActive = settings.isExtensionActive;
         activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
@@ -186,15 +196,29 @@ function toggleExtensionState(state) {
         saveSettingsDebounced();
     });
 
+    $onlyTriggerWhenUserLast.off('click').on('click', (e) => {
+        extension_settings.customReasoning.onlyTriggerWhenUserLast = !extension_settings.customReasoning.onlyTriggerWhenUserLast;
+        saveSettingsDebounced();
+    })
+
     $postReasoningPrefix.off('change').on('change', (e) => {
         extension_settings.customReasoning.postReasoningPrefix = $postReasoningPrefix.val();
         saveSettingsDebounced();
     });
 
 
+
+
     eventSource.on(event_types.GENERATION_STARTED, async () => {
         console.debug(`Generation started; isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+
         if (!isExtensionActive) return;
+
+        if (shouldSkipIfNotUserLast()) {
+            console.warn(LOG_PREFIX, 'Generation started, but last message is not from user, skipping');
+            return;
+        }
+
         isMidGenerationCycle = true;
 
         if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
@@ -228,6 +252,11 @@ function toggleExtensionState(state) {
 
     eventSource.on(event_types.GENERATION_ENDED, async () => {
         if (!isExtensionActive) return;
+        if (shouldSkipIfNotUserLast()) {
+            console.warn(LOG_PREFIX, 'Generation ended, but last message is not from user, skipping');
+            return;
+        }
+
         console.debug(LOG_PREFIX, 'Generation ended');
         await delay(200);
         console.debug(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);

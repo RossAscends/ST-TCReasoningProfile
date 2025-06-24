@@ -29,7 +29,11 @@
                 <select id="reasoningProfileSelector" class="text_pole flex1 wide100p" placeholder="Select profile for Reasoning" value="" title="This Profile will be used for Reasoning Step."></select>
             </div>
             <div class="flex-container checkbox">
-                <input type="checkbox" id="autoContinueAfterReasoning" class="checkbox" value="true" data-i18n="Auto Continue After Reasoning" title="Continues the Response after the Reasoning step. You should probabaly always leave this on.">
+                <input type="checkbox" id="onlyTriggerWhenUserLast" class="checkbox" value="true" data-i18n="Only trigger when User is last in chat" title="When checked, the Extension will only trigger when the last message in chat is from User. This is useful when AutoContinue is off.">
+                Only trigger when User is last in Chat
+            </div>
+            <div class="flex-container checkbox">
+                <input type="checkbox" id="autoContinueAfterReasoning" class="checkbox" value="true" data-i18n="Continue with Response After Reasoning" title="Continues the Response after the Reasoning step. You should probabaly always leave this on.">
                 Continue with Response After Reasoning
             </div>
             <div class="flex-container alignitemscenter">
