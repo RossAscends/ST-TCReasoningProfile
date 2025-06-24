@@ -7,6 +7,7 @@ import { saveSettingsDebounced, saveChat, stopGeneration } from '../../../../scr
 import { delay } from '../../../utils.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { waitUntilCondition } from '../../../utils.js';
 
 const LOG_PREFIX = '[ST-TCReasoningProfile]';
 const EXTENSION_PATH = 'scripts/extensions/third-party/ST-TCReasoningProfile';
@@ -20,6 +21,8 @@ let isExtensionActive = false;
 let isMidGenerationCycle = false;
 let isAutoContinuing = false;
 let isProfileSwapping = false;
+
+let triggerType = 'GENERATION_STARTED';
 
 let settings = {};
 
@@ -80,6 +83,22 @@ async function swapToReasoningProfile() {
     isReasoningProfileSwappedOn = true;
     console.debug(`${LOG_PREFIX} Swapping to reasoning profile ${extension_settings.customReasoning.reasoningProfileName}`);
     try {
+
+        const targetNode = document.querySelector('.online_status_indicator');
+        const config = { attributes: true, attributeFilter: ['class'] };
+        let apiIsOnline = false
+        const callback = function (mutationsList, observer) {
+            for (let mutation of mutationsList) {
+                if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
+                    console.log('Class "success" added to #online_status_indicator');
+                    apiIsOnline = true
+                }
+            }
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
+        apiIsOnline = false
+
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
@@ -88,10 +107,14 @@ async function swapToReasoningProfile() {
             },
             extension_settings.customReasoning.reasoningProfileName,
         );
-        await new Promise(resolve => setTimeout(() => {
-            isProfileSwapping = false;
+
+        await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
+            console.debug(`${LOG_PREFIX} Reasoning profile swap complete and API online`);
             resolve();
-        }, 500));
+            observer.disconnect();
+            isProfileSwapping = false;
+        }));
+
     } catch (error) {
         console.error(`Failed to swap to reasoning profile: ${error}`);
     }
@@ -101,6 +124,22 @@ async function swapToOriginalProfile() {
     console.debug(`${LOG_PREFIX} Swapping back to original profile: "${activeConnectionProfileName}"`);
     isProfileSwapping = true;
     try {
+
+        const targetNode = document.querySelector('.online_status_indicator');
+        const config = { attributes: true, attributeFilter: ['class'] };
+        let apiIsOnline = false
+        const callback = function (mutationsList, observer) {
+            for (let mutation of mutationsList) {
+                if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
+                    console.log('Class "success" added to #online_status_indicator');
+                    apiIsOnline = true
+                }
+            }
+        };
+        const observer = new MutationObserver(callback);
+        observer.observe(targetNode, config);
+        apiIsOnline = false
+
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
@@ -109,11 +148,14 @@ async function swapToOriginalProfile() {
             },
             activeConnectionProfileName,
         );
-        await new Promise(resolve => setTimeout(() => {
-            isProfileSwapping = false;
-            isReasoningProfileSwappedOn = false;
+
+        await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
+            console.debug(`${LOG_PREFIX} Original profile swap complete and API online`);
             resolve();
-        }, 500));
+            observer.disconnect();
+            isReasoningProfileSwappedOn = false;
+            isProfileSwapping = false;
+        }));
 
     } catch (error) {
         console.error(`Failed to swap to reasoning profile: ${error}`);
@@ -124,10 +166,30 @@ function shouldSkipIfNotUserLast() {
     let onlyTriggerWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
     let chat = getContext().chat;
     let lastMes = chat[chat.length - 1];
+    console.debug(`${LOG_PREFIX} lastMes: ${JSON.stringify(lastMes.mes)}`);
     let lastMesIsUser = lastMes.is_user
     let shouldSkip = !lastMesIsUser && onlyTriggerWhenUserLast;
-    console.warn(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}, onlyTriggerWhenUserLast: ${onlyTriggerWhenUserLast}, shouldSkip: ${shouldSkip}`);
+    console.debug(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}, onlyTriggerWhenUserLast: ${onlyTriggerWhenUserLast}, shouldSkip: ${shouldSkip}`);
     return shouldSkip
+}
+
+function checkIfLastMesIsByUser() {
+    let chat = getContext().chat;
+    let lastMes = chat[chat.length - 1];
+    console.warn(`${LOG_PREFIX} lastMes: ${JSON.stringify(lastMes.mes)}`);
+    let lastMesIsUser = lastMes.is_user
+    console.warn(`${LOG_PREFIX} lastMesIsUser: ${lastMesIsUser}`);
+    return lastMesIsUser
+}
+
+function setAppropriateTriggerType() {
+    let onlyTriggerOnUserMessage = extension_settings.customReasoning.onlyTriggerWhenUserLast;
+    if (onlyTriggerOnUserMessage) {
+        triggerType = 'MESSAGE_SENT';
+    } else {
+        triggerType = 'GENERATION_STARTED';
+    }
+    console.warn(`${LOG_PREFIX} Trigger type set to ${triggerType}`);
 }
 
 function toggleExtensionState(state) {
@@ -182,6 +244,7 @@ function toggleExtensionState(state) {
         activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
         console.debug(`${LOG_PREFIX} onLoad active connection profile is: ${activeConnectionProfileName}`);
         toggleExtensionState(isExtensionActive);
+        setAppropriateTriggerType();
     });
 
     $activeToggle.off('click').on('click', (e) => {
@@ -198,6 +261,7 @@ function toggleExtensionState(state) {
 
     $onlyTriggerWhenUserLast.off('click').on('click', (e) => {
         extension_settings.customReasoning.onlyTriggerWhenUserLast = !extension_settings.customReasoning.onlyTriggerWhenUserLast;
+        setAppropriateTriggerType();
         saveSettingsDebounced();
     })
 
@@ -206,17 +270,17 @@ function toggleExtensionState(state) {
         saveSettingsDebounced();
     });
 
-
-
-
-    eventSource.on(event_types.GENERATION_STARTED, async () => {
-        console.debug(`Generation started; isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+    eventSource.on(event_types[triggerType], async () => {
+        console.debug(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
 
         if (!isExtensionActive) return;
 
-        if (shouldSkipIfNotUserLast()) {
-            console.warn(LOG_PREFIX, 'Generation started, but last message is not from user, skipping');
-            return;
+        let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
+        let isLastMesByUser = checkIfLastMesIsByUser();
+
+        if (triggerOnlyWhenUserLast && !isLastMesByUser) {
+            console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
+            return
         }
 
         isMidGenerationCycle = true;
@@ -252,10 +316,6 @@ function toggleExtensionState(state) {
 
     eventSource.on(event_types.GENERATION_ENDED, async () => {
         if (!isExtensionActive) return;
-        if (shouldSkipIfNotUserLast()) {
-            console.warn(LOG_PREFIX, 'Generation ended, but last message is not from user, skipping');
-            return;
-        }
 
         console.debug(LOG_PREFIX, 'Generation ended');
         await delay(200);
@@ -278,6 +338,7 @@ function toggleExtensionState(state) {
             $('#option_continue').trigger('click'); //old school smoothbrained method still used in script.js!
         }
         console.debug(`${LOG_PREFIX} AFTER GEND: MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+
     });
 
     eventSource.on(event_types.CONNECTION_PROFILE_LOADED, () => {
