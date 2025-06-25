@@ -3,7 +3,7 @@ const {
     event_types,
 } = SillyTavern.getContext();
 
-import { saveSettingsDebounced, saveChat, stopGeneration } from '../../../../script.js';
+import { saveSettingsDebounced, saveChat, online_status } from '../../../../script.js';
 import { delay } from '../../../utils.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
@@ -144,6 +144,24 @@ function setupObserverOnVisibleIndicator() {
 }
 */
 
+async function waitForEvent(eventName, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            eventSource.removeListener(eventName, onEvent);
+            reject(new Error(`Timed out waiting for event "${eventName}"`));
+        }, timeout);
+
+        function onEvent(...args) {
+            clearTimeout(timer);
+            eventSource.removeListener(eventName, onEvent);
+            resolve(...args);
+            console.warn(`${LOG_PREFIX} Received and Resolved event "${eventName}"`);
+        }
+
+        eventSource.once(eventName, onEvent);
+    });
+}
+
 //MARK:SwapToReasoning
 async function swapToReasoningProfile() {
 
@@ -158,28 +176,41 @@ async function swapToReasoningProfile() {
     isProfileSwapping = true;
 
     console.warn(`${LOG_PREFIX} Swapping to reasoning profile ${extension_settings.customReasoning.reasoningProfileName}`);
+
     try {
 
-        //setupObserverOnVisibleIndicator(); //uncomment this to watch the online status changes in real time
+        // Prepare to wait for event BEFORE triggering slashcommand
+        const waitForProfileLoad = waitForEvent(event_types.CONNECTION_PROFILE_LOADED, 5000);
 
-        //this does the actual profile swap
+        console.warn(`${LOG_PREFIX} sending slashcommand callback`);
+
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
-                _scope: null, // or a valid SlashCommandScope instance
-                _abortController: null, // or a valid SlashCommandAbortController instance
+                _scope: null,
+                _abortController: null,
             },
             extension_settings.customReasoning.reasoningProfileName,
         );
 
-        // block progress and Wait until API online again before continuing
-        await waitUntilCondition(() => {
-            const visibleBlock = getVisibleApiBlock();
-            const indicator = visibleBlock?.querySelector('.online_status_indicator');
-            return indicator?.classList.contains('success');
-        }, 5000, 100);
+        console.warn(`${LOG_PREFIX} sent slashcommand callback`);
 
-        //once the new API is back online, change the variables
+        // Now wait for the event to actually occur
+
+        await waitUntilCondition(() => online_status === 'no_connection', 5000, 100);
+        console.warn(`${LOG_PREFIX} Saw online_status change to no_connection; Waiting for profile to load...`);
+
+        //first wait for the profile to load, this will cause status to change to offline once
+        await waitForProfileLoad;
+
+        console.warn(`${LOG_PREFIX} Profile loaded; Waiting for status to change to online...`);
+
+        //this will be the status changing to online
+        // (no false positives here becuase it went offline when the slashcommand callback happened)
+        await waitUntilCondition(() => online_status !== 'no_connection', 5000, 100);
+
+        console.warn(`${LOG_PREFIX} Saw online_status change to online`);
+
         isReasoningProfileSwappedOn = true;
         isProfileSwapping = false;
         console.warn(`${LOG_PREFIX} Successfully swapped to reasoning profile`);
@@ -189,6 +220,7 @@ async function swapToReasoningProfile() {
     }
 }
 
+
 //MARK:SwapBack
 async function swapToOriginalProfile() {
     console.warn(`${LOG_PREFIX} Swapping back to original profile: "${activeConnectionProfileName}"`);
@@ -196,6 +228,10 @@ async function swapToOriginalProfile() {
     try {
 
         //setupObserverOnVisibleIndicator();
+
+        const waitForProfileLoad = waitForEvent(event_types.CONNECTION_PROFILE_LOADED, 5000);
+
+        console.warn(`${LOG_PREFIX} sending slashcommand callback`);
 
         await SlashCommandParser.commands['profile'].callback(
             {
@@ -206,12 +242,19 @@ async function swapToOriginalProfile() {
             activeConnectionProfileName,
         );
 
-        // Wait until online again before continuing
-        await waitUntilCondition(() => {
-            const visibleBlock = getVisibleApiBlock();
-            const indicator = visibleBlock?.querySelector('.online_status_indicator');
-            return indicator?.classList.contains('success');
-        }, 5000, 100);
+        console.warn(`${LOG_PREFIX} sent slashcommand callback`);
+
+        await waitUntilCondition(() => online_status === 'no_connection', 5000, 100);
+        console.warn(`${LOG_PREFIX} Saw online_status change to no_connection; Waiting for profile to load...`);
+
+        //first wait for the profile to load, this will cause status to change to offline once
+        await waitForProfileLoad;
+        console.warn(`${LOG_PREFIX} Profile loaded; Waiting for status to change to online...`);
+
+        //this will be the status changing to online
+        // (no false positives here becuase it went offline when the slashcommand callback happened)
+        await waitUntilCondition(() => online_status !== 'no_connection', 5000, 100);
+        console.warn(`${LOG_PREFIX} Saw online_status change to online`);
 
         isProfileSwapping = false;
         isReasoningProfileSwappedOn = false;
@@ -243,62 +286,65 @@ function setAppropriateTriggerType() {
     console.warn(`${LOG_PREFIX} Trigger type set to ${triggerType}`);
 }
 
+//MARK:OnMessageStart
+async function messageStartListener() {
+    console.warn(`Generation started; triggerType: ${triggerType}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+
+    if (!isExtensionActive) return;
+    if (isAppLoading) return;
+
+    let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
+
+    let isLastMesByUser = null
+
+    isLastMesByUser = checkIfLastMesIsByUser();
+
+    console.warn(`${LOG_PREFIX} triggerOnlyWhenUserLast: ${triggerOnlyWhenUserLast}, isLastMesByUser: ${isLastMesByUser}`);
+    if (!isAutoContinuing && triggerOnlyWhenUserLast && isLastMesByUser === false) {
+        console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
+        return
+    }
+
+    isMidGenerationCycle = true;
+
+    if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
+        console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
+        await swapToReasoningProfile();
+        console.warn(LOG_PREFIX, 'Swapped to reasoning Profile; back in the main message Start listener');
+        /*             eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
+                        console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
+                        stopGeneration();
+                    }); */
+    }
+    if (isExtensionActive && isAutoContinuing) {
+        console.warn(LOG_PREFIX, 'AUTOCONTINUING');
+
+        /*
+        // uncomment to see exactly what was sent
+        eventSource.once(event_types.GENERATE_AFTER_DATA, async (generate_data) => {
+            console.warn(generate_data.prompt);
+        });
+        */
+
+        let chat = getContext().chat;
+        let lastMes = chat[chat.length - 1];
+
+        console.warn(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
+        lastMes.mes = extension_settings.customReasoning.postReasoningPrefix;
+        chat[chat.length - 1] = lastMes;
+        await saveChat();
+        await delay(200);
+    }
+}
+
 
 function setupStartListener() {
     console.warn(`${LOG_PREFIX} Setting up start listener for type ${triggerType}`);
 
-    eventSource.removeListener(event_types.GENERATION_STARTED);
-    eventSource.removeListener(event_types.USER_MESSAGE_RENDERED);
+    eventSource.removeListener(event_types.GENERATION_STARTED, messageStartListener);
+    eventSource.removeListener(event_types.USER_MESSAGE_RENDERED, messageStartListener);
 
-    //MARK:OnMessageStart
-    eventSource.on(event_types[triggerType], async () => {
-        console.warn(`Generation started; triggerType: ${triggerType}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
-
-        if (!isExtensionActive) return;
-        if (isAppLoading) return;
-
-        let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
-
-        let isLastMesByUser = null
-
-        isLastMesByUser = checkIfLastMesIsByUser();
-
-        console.warn(`${LOG_PREFIX} triggerOnlyWhenUserLast: ${triggerOnlyWhenUserLast}, isLastMesByUser: ${isLastMesByUser}`);
-        if (!isAutoContinuing && triggerOnlyWhenUserLast && isLastMesByUser === false) {
-            console.warn(`${LOG_PREFIX} Skipping generation because last message is not by user`);
-            return
-        }
-
-        isMidGenerationCycle = true;
-
-        if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
-            console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
-            await swapToReasoningProfile();
-            /*             eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
-                            console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
-                            stopGeneration();
-                        }); */
-        }
-        if (isExtensionActive && isAutoContinuing) {
-            console.warn(LOG_PREFIX, 'AUTOCONTINUING');
-
-            /*
-            // uncomment to see exactly what was sent
-            eventSource.once(event_types.GENERATE_AFTER_DATA, async (generate_data) => {
-                console.warn(generate_data.prompt);
-            });
-            */
-
-            let chat = getContext().chat;
-            let lastMes = chat[chat.length - 1];
-
-            console.warn(LOG_PREFIX, 'PRIMING CONTINUE WITH PREFIX');
-            lastMes.mes = extension_settings.customReasoning.postReasoningPrefix;
-            chat[chat.length - 1] = lastMes;
-            await saveChat();
-            await delay(200);
-        }
-    });
+    eventSource.on(event_types[triggerType], messageStartListener);
 }
 
 function toggleExtensionState(state) {
@@ -390,7 +436,7 @@ function toggleExtensionState(state) {
         if (isAppLoading) return;
 
         console.warn(LOG_PREFIX, 'Generation ended');
-        //await delay(200);
+        await delay(200);
         console.warn(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isAutoContinuing? ${isAutoContinuing}`);
         if (isReasoningProfileSwappedOn && isExtensionActive && !isProfileSwapping) {
             console.warn(LOG_PREFIX, 'G_ENDED; reverting');
