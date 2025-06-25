@@ -69,11 +69,86 @@ async function updateExtensionSettings() {
     await saveSettingsDebounced();
 }
 
+function getVisibleApiBlock() {
+    const candidates = document.querySelectorAll('#rm_api_block div[id$="_api"]');
+    return Array.from(candidates).find(div => {
+        return window.getComputedStyle(div).display === 'block';
+    });
+}
+
+/*
+// Useful observer for watching online_status_indicator changes across multiple APIs swaps
+// Not strictly needed except for debugging
+function setupObserverOnVisibleIndicator() {
+    const config = { attributes: true, attributeFilter: ['class'] };
+
+    let currentObservedNode = null;
+    let observer = null;
+    let apiIsOnline = false;
+    let waitingForReaddition = false;
+
+    const visibleApiBlock = getVisibleApiBlock();
+    if (!visibleApiBlock) {
+        console.warn(`${LOG_PREFIX} No visible *_api block found`);
+        return;
+    }
+
+    console.warn(`${LOG_PREFIX} Visible API block is: #${visibleApiBlock.id}`);
+
+    const indicator = visibleApiBlock.querySelector('.online_status_indicator');
+    if (!indicator) {
+        console.warn(`${LOG_PREFIX} No .online_status_indicator found in #${visibleApiBlock.id}`);
+        return;
+    }
+
+    console.warn(`${LOG_PREFIX} Found .online_status_indicator inside #${visibleApiBlock.id}`);
+    console.warn(`${LOG_PREFIX} Current classes on indicator:`, indicator.className);
+
+    if (currentObservedNode === indicator) {
+        console.warn(`${LOG_PREFIX} Already observing the correct node`);
+        return;
+    }
+
+    if (observer) {
+        console.warn(`${LOG_PREFIX} Disconnecting previous observer`);
+        observer.disconnect();
+    }
+
+    currentObservedNode = indicator;
+    waitingForReaddition = !indicator.classList.contains('success');
+    console.warn(`${LOG_PREFIX} Initial waitingForReaddition = ${waitingForReaddition}`);
+
+    observer = new MutationObserver((mutationsList) => {
+        console.warn(`${LOG_PREFIX} MutationObserver triggered with ${mutationsList.length} mutations`);
+        for (let mutation of mutationsList) {
+            console.warn(`${LOG_PREFIX} Mutation:`, mutation);
+            if (mutation.attributeName === 'class') {
+                const classList = mutation.target.classList;
+                console.warn(`${LOG_PREFIX} Updated class list:`, classList.value);
+
+                if (!waitingForReaddition && !classList.contains('success')) {
+                    console.warn(`${LOG_PREFIX} Class "success" REMOVED`);
+                    waitingForReaddition = true;
+                    apiIsOnline = false;
+                } else if (waitingForReaddition && classList.contains('success')) {
+                    console.warn(`${LOG_PREFIX} Class "success" RE-ADDED`);
+                    waitingForReaddition = false;
+                    apiIsOnline = true;
+                }
+            }
+        }
+    });
+
+    observer.observe(currentObservedNode, config);
+    console.warn(`${LOG_PREFIX} Started observing .online_status_indicator inside #${visibleApiBlock.id}`);
+}
+*/
+
 //MARK:SwapToReasoning
 async function swapToReasoningProfile() {
 
     if (extension_settings.customReasoning.reasoningProfile == 'None') {
-        console.warn(LOG_PREFIX, 'No reasoning profile selected');
+        console.error(LOG_PREFIX, 'No reasoning profile selected');
         isReasoningProfileSwappedOn = false;
         return;
     }
@@ -81,25 +156,13 @@ async function swapToReasoningProfile() {
     activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
     console.warn(`${LOG_PREFIX} Saving active main profile as "${activeConnectionProfileName}" for later reversion.`);
     isProfileSwapping = true;
-    isReasoningProfileSwappedOn = true;
+
     console.warn(`${LOG_PREFIX} Swapping to reasoning profile ${extension_settings.customReasoning.reasoningProfileName}`);
     try {
 
-        const targetNode = document.querySelector('.online_status_indicator');
-        const config = { attributes: true, attributeFilter: ['class'] };
-        let apiIsOnline = false
-        const callback = function (mutationsList, observer) {
-            for (let mutation of mutationsList) {
-                if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
-                    console.warn('Class "success" added to #online_status_indicator');
-                    apiIsOnline = true
-                }
-            }
-        };
-        const observer = new MutationObserver(callback);
-        observer.observe(targetNode, config);
-        apiIsOnline = false
+        //setupObserverOnVisibleIndicator(); //uncomment this to watch the online status changes in real time
 
+        //this does the actual profile swap
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
@@ -109,15 +172,20 @@ async function swapToReasoningProfile() {
             extension_settings.customReasoning.reasoningProfileName,
         );
 
-        await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
-            console.warn(`${LOG_PREFIX} Reasoning profile swap complete and API online`);
-            resolve();
-            observer.disconnect();
-            isProfileSwapping = false;
-        }));
+        // block progress and Wait until API online again before continuing
+        await waitUntilCondition(() => {
+            const visibleBlock = getVisibleApiBlock();
+            const indicator = visibleBlock?.querySelector('.online_status_indicator');
+            return indicator?.classList.contains('success');
+        }, 5000, 100);
+
+        //once the new API is back online, change the variables
+        isReasoningProfileSwappedOn = true;
+        isProfileSwapping = false;
+        console.warn(`${LOG_PREFIX} Successfully swapped to reasoning profile`);
 
     } catch (error) {
-        console.error(`Failed to swap to reasoning profile: ${error}`);
+        console.error(`${LOG_PREFIX} Failed to swap to reasoning profile: ${error}`);
     }
 }
 
@@ -127,20 +195,7 @@ async function swapToOriginalProfile() {
     isProfileSwapping = true;
     try {
 
-        const targetNode = document.querySelector('.online_status_indicator');
-        const config = { attributes: true, attributeFilter: ['class'] };
-        let apiIsOnline = false
-        const callback = function (mutationsList, observer) {
-            for (let mutation of mutationsList) {
-                if (mutation.attributeName === 'class' && mutation.target.classList.contains('success')) {
-                    console.warn('Class "success" added to #online_status_indicator');
-                    apiIsOnline = true
-                }
-            }
-        };
-        const observer = new MutationObserver(callback);
-        observer.observe(targetNode, config);
-        apiIsOnline = false
+        //setupObserverOnVisibleIndicator();
 
         await SlashCommandParser.commands['profile'].callback(
             {
@@ -151,16 +206,19 @@ async function swapToOriginalProfile() {
             activeConnectionProfileName,
         );
 
-        await new Promise(resolve => waitUntilCondition(() => apiIsOnline).then(() => {
-            console.warn(`${LOG_PREFIX} Original profile swap complete and API online`);
-            resolve();
-            observer.disconnect();
-            isReasoningProfileSwappedOn = false;
-            isProfileSwapping = false;
-        }));
+        // Wait until online again before continuing
+        await waitUntilCondition(() => {
+            const visibleBlock = getVisibleApiBlock();
+            const indicator = visibleBlock?.querySelector('.online_status_indicator');
+            return indicator?.classList.contains('success');
+        }, 5000, 100);
+
+        isProfileSwapping = false;
+        isReasoningProfileSwappedOn = false;
+        console.warn(`${LOG_PREFIX} Successfully swapped back to original profile`);
 
     } catch (error) {
-        console.error(`Failed to swap to reasoning profile: ${error}`);
+        console.error(`${LOG_PREFIX} Failed to swap to reasoning profile: ${error}`);
     }
 }
 
@@ -185,15 +243,16 @@ function setAppropriateTriggerType() {
     console.warn(`${LOG_PREFIX} Trigger type set to ${triggerType}`);
 }
 
-//MARK:OnMessageStart
+
 function setupStartListener() {
     console.warn(`${LOG_PREFIX} Setting up start listener for type ${triggerType}`);
 
     eventSource.removeListener(event_types.GENERATION_STARTED);
     eventSource.removeListener(event_types.USER_MESSAGE_RENDERED);
 
+    //MARK:OnMessageStart
     eventSource.on(event_types[triggerType], async () => {
-        console.warn(`Generation started; triggerType: ${triggerType}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+        console.warn(`Generation started; triggerType: ${triggerType}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
 
         if (!isExtensionActive) return;
         if (isAppLoading) return;
@@ -215,10 +274,10 @@ function setupStartListener() {
         if (!isReasoningProfileSwappedOn && isExtensionActive && !isAutoContinuing) {
             console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
             await swapToReasoningProfile();
-            eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
-                console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
-                stopGeneration();
-            });
+            /*             eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
+                            console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
+                            stopGeneration();
+                        }); */
         }
         if (isExtensionActive && isAutoContinuing) {
             console.warn(LOG_PREFIX, 'AUTOCONTINUING');
@@ -296,8 +355,8 @@ function toggleExtensionState(state) {
         toggleExtensionState(isExtensionActive);
         setAppropriateTriggerType();
         isAppLoading = false;
-        console.warn(`${LOG_PREFIX} Extension setup complete.`);
         setupStartListener();
+        console.warn(`${LOG_PREFIX} Extension setup complete.`);
     });
 
     $activeToggle.off('click').on('click', (e) => {
@@ -331,8 +390,8 @@ function toggleExtensionState(state) {
         if (isAppLoading) return;
 
         console.warn(LOG_PREFIX, 'Generation ended');
-        await delay(200);
-        console.warn(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
+        //await delay(200);
+        console.warn(`${LOG_PREFIX} MidGeneration? ${isMidGenerationCycle}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isAutoContinuing? ${isAutoContinuing}`);
         if (isReasoningProfileSwappedOn && isExtensionActive && !isProfileSwapping) {
             console.warn(LOG_PREFIX, 'G_ENDED; reverting');
             await swapToOriginalProfile();
