@@ -142,6 +142,7 @@ async function swapToReasoningProfile() {
         isReasoningProfileSwappedOn = true;
         isProfileSwapping = false;
         console.warn(`${LOG_PREFIX} Successfully swapped to reasoning profile`);
+        console.warn(`${LOG_PREFIX} Confirming Response Profile is ${activeConnectionProfileName}`);
 
     } catch (error) {
         console.error(`${LOG_PREFIX} Failed to swap to reasoning profile: ${error}`);
@@ -423,8 +424,7 @@ function toggleExtensionState(state) {
     });
 
     eventSource.on(event_types.CONNECTION_PROFILE_LOADED, () => {
-        if (!isExtensionActive) return;
-        if (isReasoningProfileSwappedOn || isMidGenerationCycle || isAutoContinuing) { return; } //so we don't trigger on our own change
+        if (isProfileSwapping || isMidGenerationCycle || isAutoContinuing) { return; } //so we don't trigger on our own change
         console.warn(`${LOG_PREFIX} Main connection profile changed to ${activeConnectionProfileName}`);
         activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
     });
