@@ -76,74 +76,6 @@ function getVisibleApiBlock() {
     });
 }
 
-/*
-// Useful observer for watching online_status_indicator changes across multiple APIs swaps
-// Not strictly needed except for debugging
-function setupObserverOnVisibleIndicator() {
-    const config = { attributes: true, attributeFilter: ['class'] };
-
-    let currentObservedNode = null;
-    let observer = null;
-    let apiIsOnline = false;
-    let waitingForReaddition = false;
-
-    const visibleApiBlock = getVisibleApiBlock();
-    if (!visibleApiBlock) {
-        console.warn(`${LOG_PREFIX} No visible *_api block found`);
-        return;
-    }
-
-    console.warn(`${LOG_PREFIX} Visible API block is: #${visibleApiBlock.id}`);
-
-    const indicator = visibleApiBlock.querySelector('.online_status_indicator');
-    if (!indicator) {
-        console.warn(`${LOG_PREFIX} No .online_status_indicator found in #${visibleApiBlock.id}`);
-        return;
-    }
-
-    console.warn(`${LOG_PREFIX} Found .online_status_indicator inside #${visibleApiBlock.id}`);
-    console.warn(`${LOG_PREFIX} Current classes on indicator:`, indicator.className);
-
-    if (currentObservedNode === indicator) {
-        console.warn(`${LOG_PREFIX} Already observing the correct node`);
-        return;
-    }
-
-    if (observer) {
-        console.warn(`${LOG_PREFIX} Disconnecting previous observer`);
-        observer.disconnect();
-    }
-
-    currentObservedNode = indicator;
-    waitingForReaddition = !indicator.classList.contains('success');
-    console.warn(`${LOG_PREFIX} Initial waitingForReaddition = ${waitingForReaddition}`);
-
-    observer = new MutationObserver((mutationsList) => {
-        console.warn(`${LOG_PREFIX} MutationObserver triggered with ${mutationsList.length} mutations`);
-        for (let mutation of mutationsList) {
-            console.warn(`${LOG_PREFIX} Mutation:`, mutation);
-            if (mutation.attributeName === 'class') {
-                const classList = mutation.target.classList;
-                console.warn(`${LOG_PREFIX} Updated class list:`, classList.value);
-
-                if (!waitingForReaddition && !classList.contains('success')) {
-                    console.warn(`${LOG_PREFIX} Class "success" REMOVED`);
-                    waitingForReaddition = true;
-                    apiIsOnline = false;
-                } else if (waitingForReaddition && classList.contains('success')) {
-                    console.warn(`${LOG_PREFIX} Class "success" RE-ADDED`);
-                    waitingForReaddition = false;
-                    apiIsOnline = true;
-                }
-            }
-        }
-    });
-
-    observer.observe(currentObservedNode, config);
-    console.warn(`${LOG_PREFIX} Started observing .online_status_indicator inside #${visibleApiBlock.id}`);
-}
-*/
-
 async function waitForEvent(eventName, timeout = 5000) {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -179,11 +111,9 @@ async function swapToReasoningProfile() {
 
     try {
 
-        // Prepare to wait for event BEFORE triggering slashcommand
         const waitForProfileLoad = waitForEvent(event_types.CONNECTION_PROFILE_LOADED, 5000);
 
         console.warn(`${LOG_PREFIX} sending slashcommand callback`);
-
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
@@ -192,23 +122,13 @@ async function swapToReasoningProfile() {
             },
             extension_settings.customReasoning.reasoningProfileName,
         );
-
         console.warn(`${LOG_PREFIX} sent slashcommand callback`);
-
-        // Now wait for the event to actually occur
 
         await waitUntilCondition(() => online_status === 'no_connection', 5000, 100);
         console.warn(`${LOG_PREFIX} Saw online_status change to no_connection; Waiting for profile to load...`);
-
-        //first wait for the profile to load, this will cause status to change to offline once
         await waitForProfileLoad;
-
         console.warn(`${LOG_PREFIX} Profile loaded; Waiting for status to change to online...`);
-
-        //this will be the status changing to online
-        // (no false positives here becuase it went offline when the slashcommand callback happened)
         await waitUntilCondition(() => online_status !== 'no_connection', 5000, 100);
-
         console.warn(`${LOG_PREFIX} Saw online_status change to online`);
 
         isReasoningProfileSwappedOn = true;
@@ -227,32 +147,23 @@ async function swapToOriginalProfile() {
     isProfileSwapping = true;
     try {
 
-        //setupObserverOnVisibleIndicator();
-
         const waitForProfileLoad = waitForEvent(event_types.CONNECTION_PROFILE_LOADED, 5000);
 
         console.warn(`${LOG_PREFIX} sending slashcommand callback`);
-
         await SlashCommandParser.commands['profile'].callback(
             {
                 await: 'true',
-                _scope: null, // or a valid SlashCommandScope instance
-                _abortController: null, // or a valid SlashCommandAbortController instance
+                _scope: null,
+                _abortController: null,
             },
             activeConnectionProfileName,
         );
-
         console.warn(`${LOG_PREFIX} sent slashcommand callback`);
 
         await waitUntilCondition(() => online_status === 'no_connection', 5000, 100);
         console.warn(`${LOG_PREFIX} Saw online_status change to no_connection; Waiting for profile to load...`);
-
-        //first wait for the profile to load, this will cause status to change to offline once
         await waitForProfileLoad;
         console.warn(`${LOG_PREFIX} Profile loaded; Waiting for status to change to online...`);
-
-        //this will be the status changing to online
-        // (no false positives here becuase it went offline when the slashcommand callback happened)
         await waitUntilCondition(() => online_status !== 'no_connection', 5000, 100);
         console.warn(`${LOG_PREFIX} Saw online_status change to online`);
 
@@ -311,20 +222,9 @@ async function messageStartListener() {
         console.warn(LOG_PREFIX, 'Swapping to reasoning Profile');
         await swapToReasoningProfile();
         console.warn(LOG_PREFIX, 'Swapped to reasoning Profile; back in the main message Start listener');
-        /*             eventSource.once(event_types.STREAM_REASONING_DONE, async () => {
-                        console.warn(LOG_PREFIX, 'STREAM_REASONING_DONE, stopping Generation.');
-                        stopGeneration();
-                    }); */
     }
     if (isExtensionActive && isAutoContinuing) {
         console.warn(LOG_PREFIX, 'AUTOCONTINUING');
-
-        /*
-        // uncomment to see exactly what was sent
-        eventSource.once(event_types.GENERATE_AFTER_DATA, async (generate_data) => {
-            console.warn(generate_data.prompt);
-        });
-        */
 
         let chat = getContext().chat;
         let lastMes = chat[chat.length - 1];
@@ -428,7 +328,6 @@ function toggleExtensionState(state) {
         extension_settings.customReasoning.postReasoningPrefix = $postReasoningPrefix.val();
         saveSettingsDebounced();
     });
-
 
     //MARK: onMessageEnd
     eventSource.on(event_types.GENERATION_ENDED, async () => {
