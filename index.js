@@ -26,7 +26,7 @@ let isProfileSwapping = false;
 
 let triggerType = 'GENERATION_STARTED';
 
-let settings = {};
+let settings = null;
 
 function initExtSettings() {
     extension_settings.customReasoning = extension_settings.customReasoning || {};
@@ -39,7 +39,9 @@ function initExtSettings() {
 }
 
 function getExtSettings() {
-    return extension_settings.customReasoning;
+    const settings = extension_settings?.customReasoning;
+    if (!settings) return null;
+    return settings;
 }
 
 function addConnectionProfilesToExtension() {
@@ -68,13 +70,6 @@ async function updateExtensionSettings() {
     extension_settings.customReasoning.reasoningProfileID = profileID;
     extension_settings.customReasoning.reasoningProfileName = profileName;
     await saveSettingsDebounced();
-}
-
-function getVisibleApiBlock() {
-    const candidates = document.querySelectorAll('#rm_api_block div[id$="_api"]');
-    return Array.from(candidates).find(div => {
-        return window.getComputedStyle(div).display === 'block';
-    });
 }
 
 async function waitForEvent(eventName, timeout = 5000) {
@@ -197,6 +192,7 @@ async function swapToOriginalProfile() {
     }
 }
 
+//MARK: regSlashCommands
 function registerExtensionSlashCommands() {
     SlashCommandParser.addCommandObject(SlashCommand.fromProps({
         name: 'TCRP-swapToReasoning',
