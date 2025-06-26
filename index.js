@@ -7,6 +7,7 @@ import { saveSettingsDebounced, saveChat, online_status } from '../../../../scri
 import { delay } from '../../../utils.js';
 import { extension_settings, getContext } from '../../../extensions.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { waitUntilCondition } from '../../../utils.js';
 
 const LOG_PREFIX = '[ST-TCReasoningProfile]';
@@ -103,6 +104,13 @@ async function swapToReasoningProfile() {
         return;
     }
 
+
+    if (activeConnectionProfileName === extension_settings.customReasoning.reasoningProfileName) {
+        console.warn(`${LOG_PREFIX} Reasoning profile is the same as the Response profile. Aborting swap process, but setting isReasoningProfileSwappedOn to true to allow proper swapping back.`);
+        isReasoningProfileSwappedOn = true;
+        return
+    }
+
     activeConnectionProfileName = $connectionProfilesSelect.find('option:selected').text();
     console.warn(`${LOG_PREFIX} Saving active main profile as "${activeConnectionProfileName}" for later reversion.`);
     isProfileSwapping = true;
@@ -143,6 +151,18 @@ async function swapToReasoningProfile() {
 
 //MARK:SwapBack
 async function swapToOriginalProfile() {
+
+    if (activeConnectionProfileName === null || activeConnectionProfileName === undefined) {
+        console.warn(`${LOG_PREFIX} No Response profile found. Aborting swap process.`);
+        return
+    }
+
+    if (activeConnectionProfileName === extension_settings.customReasoning.reasoningProfileName) {
+        console.warn(`${LOG_PREFIX} Response profile is the same as the Reasoning profile. Aborting swap process, but setting isReasoningProfileSwappedOn to false to complete the swap process logic.`);
+        isReasoningProfileSwappedOn = false;
+        return
+    }
+
     console.warn(`${LOG_PREFIX} Swapping back to original profile: "${activeConnectionProfileName}"`);
     isProfileSwapping = true;
     try {
@@ -176,6 +196,47 @@ async function swapToOriginalProfile() {
     }
 }
 
+function registerExtensionSlashCommands() {
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'TCRP-swapToReasoning',
+        callback: swapToReasoningProfileViaSlash,
+        returns: 'nothing',
+        helpString: `Force the TCRP extension to swap to its Reasoning profile. Will execute even if the extension's power button is set to "off".`,
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'TCRP-swapToResponse',
+        callback: swapToResponseProfileViaSlash,
+        returns: 'nothing',
+        helpString: `Force the TCRP  extension to swap to the last known Response profile. Will execute even if the extension's power button is set to "off".`,
+    }));
+
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'TCRP-toggle',
+        callback: toggleExtensionViaSlash,
+        returns: 'nothing',
+        helpString: `Toggles the TCRP Extension on and off.`,
+    }));
+}
+
+async function swapToReasoningProfileViaSlash() {
+    console.warn(`${LOG_PREFIX} Received slashcommand /TCRP-swapToReasoning`);
+    await swapToReasoningProfile();
+    return 'ok'
+}
+
+async function swapToResponseProfileViaSlash() {
+    console.warn(`${LOG_PREFIX} Received slashcommand /TCRP-swapToResponse`);
+    await swapToOriginalProfile();
+    return 'ok'
+}
+
+async function toggleExtensionViaSlash() {
+    console.warn(`${LOG_PREFIX} Received slashcommand /TCRP-toggle`);
+    $('#customReasoningPowerButton').trigger('click');
+    return 'ok'
+}
+
 function checkIfLastMesIsByUser() {
     let lastMesIsUser
     let { chat } = SillyTavern.getContext();
@@ -199,10 +260,10 @@ function setAppropriateTriggerType() {
 
 //MARK:OnMessageStart
 async function messageStartListener() {
-    console.warn(`Generation started; triggerType: ${triggerType}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
-
     if (!isExtensionActive) return;
     if (isAppLoading) return;
+
+    console.warn(`Generation started; triggerType: ${triggerType}, isReasoningProfileSwappedOn? ${isReasoningProfileSwappedOn}, isMidGenerationCycle? ${isMidGenerationCycle}, isAutoContinuing? ${isAutoContinuing}`);
 
     let triggerOnlyWhenUserLast = extension_settings.customReasoning.onlyTriggerWhenUserLast;
 
@@ -253,8 +314,10 @@ function toggleExtensionState(state) {
     $activeToggle.toggleClass('toggleEnabled', state);
     extension_settings.customReasoning.isExtensionActive = state;
     saveSettingsDebounced();
+    console.warn(`${LOG_PREFIX} Extension state toggled to ${state}`);
 }
 
+//MARK: onDOMReady
 (async function () {
 
     //console.warn('Custom Reasoning extension loaded');
@@ -302,6 +365,7 @@ function toggleExtensionState(state) {
         setAppropriateTriggerType();
         isAppLoading = false;
         setupStartListener();
+        registerExtensionSlashCommands();
         console.warn(`${LOG_PREFIX} Extension setup complete.`);
     });
 
