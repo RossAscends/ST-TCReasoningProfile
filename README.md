@@ -36,16 +36,15 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
   - **EXCEPTION**: Asking the model produce a minimal 'finished signal' (ex: `CoT Done`) outside the Reasoning tags can be a useful failsafe. This is explained more below.
 - `Response Step` is higher temp, clears any leftover non-Reasoning content, and uses the Reasoning to inform itself.
 
-
 ### Limitations
 
 - Since you are effectively making two separate API requests, it may take longer if your backend is slow with Prompt Processing.
   - In my testing (RTX3060 12GB VRAM running a 24B 2.5bpw EXL3 model in Tabby at 8k Q8 context) I found a full response of 500 reasoning tokens and 1000 response tokens took about 60-80 seconds. However this was pushing my card to the limit. Models that properly fit your GPU will be significantly faster.
 - You have to setup the Connection Profiles on your own.
-- Will probably break if you try to use it alongside Stepped Thinking or any other Extension/Quick Reply that interferes with ST's native message processing functions.
+- Will probably break if you try to use it alongside Stepped Thinking, Tracker or any other Extension/Quick Reply that interferes with ST's native message processing functions.
 - You must remember to save any presets that are a part of your connection profiles if you do any Sampler or Prompt adjustments.
 - You must remember to save the Connection Profile itself if you swap any of the presets associated with it.
-- It probably won't work on Chat Completion APIs, but there are better, usually native, tools for managing Reasoning on those APIs/models already.
+- It can work on Chat Completion APIs, but there are better, usually native, tools for managing Reasoning on those APIs/models already.
 
 ## Post-install Setup
 
@@ -66,6 +65,14 @@ This extension draws inspiration from [Stepped Thinking](https://github.com/cier
   - Add the header prefix to help assure the model will continue successfully
   - Finally, initiate a Continue to get the Response portion
 - **Only Trigger when User is Last in Chat** checkbox - self explanatory. It will make the extension do nothing unless a User message is the last one in chat when a generation is called. This is useful to have on in certain situations such as QR integrations or sending `/sys` messages.
+
+### Slash Commands
+
+`/TCRP-toggle` just toggles the extension's power button
+`/TCRP-swapToReasoning` does the swap to Reasoning profile process
+`/TCRP-swapToResponse` does the swap to Response profile process
+
+The two swap commands do not trigger an API request, so they can be added into STSCript and QRs for custom functionality.
 
 ### Profile Setup
 
